@@ -544,101 +544,6 @@ td input[type=text]:focus{background:var(--blue2)}
 }
 @media(min-width:761px){.mobile-list{display:none!important}}
 
-/* === ЭКСПОРТ И РЕЗЕРВНАЯ КОПИЯ (ТОЛЬКО ЧТЕНИЕ) === */
-function toggleExportMenu(){document.getElementById('exportMenu')?.classList.toggle('hidden')}
-document.addEventListener('click',e=>{const c=document.querySelector('.export-control');if(c&&!c.contains(e.target))document.getElementById('exportMenu')?.classList.add('hidden')});
-const EXPORT_TABLES=['periods','orders','dodelki','ordered_positions','expenses','expense_drafts','schedule_state','reminders'];
-const EXPORT_PAGE_SIZE=1000;
-async function fetchAllTableRows(table){
-  const all=[];let from=0;let expected=null;
-  while(true){
-    const to=from+EXPORT_PAGE_SIZE-1;
-    const response=await fetch(URL+'/rest/v1/'+table+'?select=*',{method:'GET',headers:{...H,'Range-Unit':'items','Range':`${from}-${to}`,'Prefer':'count=exact'}});
-    const raw=response.status===204?'':await response.text();
-    if(!response.ok){let msg=raw;try{const j=JSON.parse(raw);msg=j.message||j.details||j.hint||raw}catch(_){};throw new Error(`${table}: HTTP ${response.status} — ${msg}`)}
-    let rows;try{rows=raw?JSON.parse(raw):[]}catch(_){throw new Error(`${table}: сервер вернул некорректный JSON`)}
-    if(!Array.isArray(rows))throw new Error(`${table}: ожидался массив строк`);
-    const cr=response.headers.get('content-range');
-    if(cr){const m=cr.match(/\/(\d+|\*)$/);if(m&&m[1]!=='*')expected=Number(m[1])}
-    all.push(...rows);
-    if(rows.length<EXPORT_PAGE_SIZE)break;
-    from+=rows.length;
-    if(from>1000000)throw new Error(`${table}: превышен предохранительный лимит выгрузки`);
-  }
-  if(expected!==null&&all.length!==expected)throw new Error(`${table}: выгружено ${all.length} строк из ${expected}; выгрузка неполная`);
-  const ids=all.filter(r=>r&&r.id!==undefined).map(r=>String(r.id));
-  if(ids.length!==new Set(ids).size)throw new Error(`${table}: обнаружены повторяющиеся id; выгрузка остановлена`);
-  return {rows:all,count:all.length,expected:expected===null?all.length:expected,complete:true};
-}
-async function collectDatabaseExport(){
-  const data={},report=[];
-  for(const table of EXPORT_TABLES){
-    const result=await fetchAllTableRows(table);data[table]=result.rows;report.push({table,...result});
-  }
-  const count=(t)=>data[t]?.length||0;
-  const periodById=new Map(data.periods.map(p=>[String(p.id),p]));
-  const orders=data.orders.map(o=>({...o,period_title:periodById.get(String(o.period_id))?.title??'',period_archived:!!periodById.get(String(o.period_id))?.archived}));
-  const json={format:'Dead_rub Supabase backup',version:1,exported_at:new Date().toISOString(),source:'GitHub Pages client-side export',tables:data,verification:{complete:report.every(x=>x.complete&&x.count===x.expected),tables:report,total_rows:report.reduce((n,x)=>n+x.count,0)}};
-  if(!json.verification.complete)throw new Error('Проверка полноты не пройдена. Файлы не созданы.');
-  return {data,report,json,orders};
-}
-function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500)}
-function exportTimestamp(){return new Date().toISOString().replace(/[:.]/g,'-').replace(/Z$/,'Z')}
-function styleWorksheet(ws,{landscape=false}={}){
-  ws.views=[{state:'frozen',ySplit:1}];
-  ws.autoFilter=ws.rowCount>1?{from:{row:1,column:1},to:{row:1,column:ws.columnCount}}:undefined;
-  ws.pageSetup={paperSize:ws.workbook?.xlsx?.PaperSize?.A4||9,orientation:landscape?'landscape':'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:.25,right:.25,top:.45,bottom:.45,header:.2,footer:.2}};
-  ws.getRow(1).height=30;
-  ws.getRow(1).eachCell(c=>{c.font={bold:true,color:{argb:'FFFFFFFF'},size:11};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF30343B'}};c.alignment={vertical:'middle',horizontal:'center',wrapText:true};c.border={bottom:{style:'medium',color:{argb:'FFFF8C1A'}}}});
-  for(let r=2;r<=ws.rowCount;r++){const row=ws.getRow(r);row.alignment={vertical:'top',wrapText:true};if(r%2===0)row.eachCell(c=>{c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F5F7'}}});row.eachCell(c=>{c.border={bottom:{style:'hair',color:{argb:'FFD9DDE2'}}};if(typeof c.value==='boolean')c.value=c.value?'Да':'Нет'})}
-  ws.eachRow(row=>row.eachCell(c=>{if(c.value instanceof Date)c.numFmt='dd.mm.yyyy hh:mm'}));
-}
-function addJsonSheet(wb,data){
-  const ws=wb.addWorksheet('JSON БД');ws.columns=[{header:'Таблица',key:'table',width:24},{header:'№ строки',key:'index',width:12},{header:'ID',key:'id',width:18},{header:'Полная запись JSON',key:'json',width:100}];
-  for(const table of EXPORT_TABLES){const rows=data[table]||[];if(!rows.length)ws.addRow({table,index:0,id:'',json:'[]'});rows.forEach((row,i)=>ws.addRow({table,index:i+1,id:row?.id??'',json:JSON.stringify(row)}))}
-  styleWorksheet(ws);return ws;
-}
-function prepareWorkbookData(wb,pack){
-  const d=pack.data;
-  const wsO=wb.addWorksheet('Заказы');
-  wsO.columns=[
-    {header:'Период',key:'period',width:20},{header:'Архивный период',key:'archived',width:15},{header:'№ заказа',key:'number',width:15},{header:'Изделие',key:'product',width:30},{header:'Адрес',key:'address',width:32},
-    {header:'ЛДСП',key:'ldsp',width:10},{header:'Фурнитура',key:'furniture',width:12},{header:'Фасады',key:'facades',width:10},{header:'Готово к сборке',key:'assembly_ready',width:16},{header:'Сборщик',key:'assembler',width:18},{header:'Монтажник',key:'installer',width:18},{header:'Примечание',key:'note',width:36},{header:'Проект готов',key:'ready',width:14},{header:'Создан',key:'created_at',width:21},{header:'Обновлён',key:'updated_at',width:21},{header:'ID',key:'id',width:12},{header:'period_id',key:'period_id',width:12}
-  ];
-  pack.orders.forEach(o=>wsO.addRow({period:o.period_title,archived:o.period_archived,number:o.number,product:o.product,address:o.address,ldsp:o.ldsp,furniture:o.furniture,facades:o.facades,assembly_ready:o.assembly_ready,assembler:o.assembler,installer:o.installer,note:o.note,ready:o.ready,created_at:o.created_at,updated_at:o.updated_at,id:o.id,period_id:o.period_id}));styleWorksheet(wsO,{landscape:true});
-  const wsD=wb.addWorksheet('Доделки');wsD.columns=[{header:'№ заказа',key:'order_number',width:17},{header:'Адрес',key:'address',width:32},{header:'Описание',key:'description',width:42},{header:'Монтажник',key:'installer',width:20},{header:'Выполнена',key:'completed',width:14},{header:'Порядок',key:'sort_order',width:12},{header:'Создана',key:'created_at',width:21},{header:'Обновлена',key:'updated_at',width:21},{header:'ID',key:'id',width:12}];d.dodelki.forEach(r=>wsD.addRow(r));styleWorksheet(wsD,{landscape:true});
-  const wsP=wb.addWorksheet('Заказные позиции');wsP.columns=[{header:'№ заказа',key:'order_number',width:18},{header:'Текст / описание',key:'description',width:48},{header:'Заказано',key:'ordered',width:14},{header:'В цеху',key:'in_workshop',width:14},{header:'Порядок',key:'sort_order',width:12},{header:'Создана',key:'created_at',width:21},{header:'Обновлена',key:'updated_at',width:21},{header:'ID',key:'id',width:12}];d.ordered_positions.forEach(r=>wsP.addRow(r));styleWorksheet(wsP,{landscape:true});
-  const wsE=wb.addWorksheet('Расходы');wsE.columns=[{header:'Дата записи',key:'name',width:22},{header:'Дата расхода',key:'date',width:17},{header:'Описание расхода',key:'description',width:44},{header:'Сумма расхода',key:'amount',width:18},{header:'Баланс на момент записи',key:'balance',width:23},{header:'Итог записи',key:'total',width:18},{header:'Строк в записи',key:'items_count',width:15},{header:'ID записи',key:'id',width:13},{header:'Создана',key:'created_at',width:22}];
-  for(const ex of d.expenses){const items=Array.isArray(ex.items)?ex.items:[];if(items.length){items.forEach((it,i)=>wsE.addRow({name:ex.name,date:it.date,description:it.description,amount:it.amount,balance:ex.balance,total:ex.total,items_count:items.length,id:ex.id,created_at:ex.created_at}))}else wsE.addRow({name:ex.name,date:'',description:'(нет отдельных строк расходов)',amount:'',balance:ex.balance,total:ex.total,items_count:0,id:ex.id,created_at:ex.created_at})}
-  styleWorksheet(wsE,{landscape:true});
-  const wsMeta=addJsonSheet(wb,d);
-  // Указываем проверенные количества в примечании к имени листа JSON через отдельные строки.
-  wsMeta.headerFooter={oddFooter:'Dead_rub backup · &D · Страница &P из &N'};
-}
-async function exportFullWorkbook(){
-  document.getElementById('exportMenu')?.classList.add('hidden');
-  try{if(!window.ExcelJS)throw new Error('Не загрузилась библиотека Excel. Проверьте подключение к интернету и обновите страницу.');toast('Проверяю данные Supabase…');const pack=await collectDatabaseExport();const wb=new ExcelJS.Workbook();wb.creator='Dead_rub';wb.created=new Date();wb.modified=new Date();prepareWorkbookData(wb,pack);const buf=await wb.xlsx.writeBuffer();downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Dead_rub_backup_${exportTimestamp()}.xlsx`);toast(`Excel готов · ${pack.report.reduce((n,x)=>n+x.count,0)} строк проверено`)}catch(e){console.error('[exportFullWorkbook]',e);alert('Экспорт остановлен: '+(e?.message||e)+'\n\nФайл не создан, потому что полнота данных не подтверждена.');}
-}
-async function exportFullJson(){
-  document.getElementById('exportMenu')?.classList.add('hidden');
-  try{toast('Проверяю данные Supabase…');const pack=await collectDatabaseExport();const blob=new Blob([JSON.stringify(pack.json,null,2)],{type:'application/json;charset=utf-8'});downloadBlob(blob,`Dead_rub_backup_${exportTimestamp()}.json`);toast(`JSON готов · ${pack.json.verification.total_rows} строк проверено`)}catch(e){console.error('[exportFullJson]',e);alert('Резервная копия не создана: '+(e?.message||e)+'\n\nПолнота данных не подтверждена.');}
-}
-async function exportScheduleWorkbook(){
-  try{
-    if(!window.ExcelJS)throw new Error('Не загрузилась библиотека Excel. Обновите страницу при подключённом интернете.');
-    const rows=await fetchAllTableRows('schedule_state');
-    if(rows.count>1)throw new Error(`В schedule_state найдено ${rows.count} записей вместо ожидаемой одной.`);
-    const raw=rows.rows[0]?.state||{};const state=normaliseScheduleState(raw);
-    const wb=new ExcelJS.Workbook();wb.creator='Dead_rub';const ws=wb.addWorksheet('График');
-    ws.columns=[{header:'Монтажник',key:'worker',width:22},...SCHEDULE_DAYS.map(day=>({header:day,key:day,width:34}))];
-    SCHEDULE_WORKERS.forEach((worker,i)=>{const obj={worker};SCHEDULE_DAYS.forEach((day,j)=>{obj[day]=String(state.cells[scheduleCellKey(i,j)]||'')});ws.addRow(obj)});
-    styleWorksheet(ws,{landscape:true});ws.pageSetup={paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:1,margins:{left:.25,right:.25,top:.35,bottom:.35,header:.15,footer:.2}};ws.pageSetup.printArea=`A1:F${SCHEDULE_WORKERS.length+1}`;ws.pageSetup.horizontalDpi=300;ws.pageSetup.verticalDpi=300;
-    ws.getColumn(1).eachCell((c,r)=>{if(r>1){c.font={bold:true};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE8EAED'}}}});
-    for(let r=2;r<=ws.rowCount;r++){ws.getRow(r).height=78;ws.getRow(r).eachCell(c=>c.alignment={vertical:'top',horizontal:'left',wrapText:true})}
-    const buf=await wb.xlsx.writeBuffer();downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Dead_rub_grafik_${exportTimestamp()}.xlsx`);toast('Excel графика готов к печати');
-  }catch(e){console.error('[exportScheduleWorkbook]',e);alert('Не удалось выгрузить график: '+(e?.message||e));}
-}
-
 /* === НАПОМИНАНИЯ === */
 .home-datetime{margin:0 auto 16px;max-width:560px;padding:10px 16px;border-radius:14px;background:var(--menu-card-bg);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid var(--menu-card-border);box-shadow:var(--menu-card-shadow);text-align:center;cursor:pointer;position:relative;z-index:2;transition:.2s}
 .home-datetime:hover{transform:translateY(-1px);border-color:rgba(var(--accent-rgb),.45)}
@@ -668,7 +573,7 @@ async function exportScheduleWorkbook(){
 .balance-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 
 
-.export-control{position:fixed;top:12px;left:84px;z-index:501}
+.export-control{display:none;position:fixed;top:12px;left:84px;z-index:501}.export-control.is-home{display:block}
 .export-round{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;padding:0;color:var(--text-strong);background:var(--glass-bg);border:1px solid var(--glass-border);backdrop-filter:blur(14px) saturate(180%);-webkit-backdrop-filter:blur(14px) saturate(180%);box-shadow:0 6px 20px rgba(0,0,0,.22),inset 0 1px 0 rgba(255,255,255,.25);transition:transform .18s,background .2s}
 .export-round:hover{transform:translateY(-1px) scale(1.04);background:var(--panel2)}
 .export-round svg{width:17px;height:17px}
@@ -1711,9 +1616,107 @@ function renderDashboard(){
   renderMaterialsChart(stats);
 }
 
+/* === ЭКСПОРТ И РЕЗЕРВНАЯ КОПИЯ (ТОЛЬКО ЧТЕНИЕ) === */
+function toggleExportMenu(){document.getElementById('exportMenu')?.classList.toggle('hidden')}
+function setExportVisibility(isHome){const el=document.querySelector('.export-control');if(el)el.classList.toggle('is-home',!!isHome);if(!isHome)document.getElementById('exportMenu')?.classList.add('hidden')}
+document.addEventListener('click',e=>{const c=document.querySelector('.export-control');if(c&&!c.contains(e.target))document.getElementById('exportMenu')?.classList.add('hidden')});
+const EXPORT_TABLES=['periods','orders','dodelki','ordered_positions','expenses','expense_drafts','schedule_state','reminders'];
+const EXPORT_PAGE_SIZE=1000;
+async function fetchAllTableRows(table){
+  const all=[];let from=0;let expected=null;
+  while(true){
+    const to=from+EXPORT_PAGE_SIZE-1;
+    const response=await fetch(URL+'/rest/v1/'+table+'?select=*',{method:'GET',headers:{...H,'Range-Unit':'items','Range':`${from}-${to}`,'Prefer':'count=exact'}});
+    const raw=response.status===204?'':await response.text();
+    if(!response.ok){let msg=raw;try{const j=JSON.parse(raw);msg=j.message||j.details||j.hint||raw}catch(_){};throw new Error(`${table}: HTTP ${response.status} — ${msg}`)}
+    let rows;try{rows=raw?JSON.parse(raw):[]}catch(_){throw new Error(`${table}: сервер вернул некорректный JSON`)}
+    if(!Array.isArray(rows))throw new Error(`${table}: ожидался массив строк`);
+    const cr=response.headers.get('content-range');
+    if(cr){const m=cr.match(/\/(\d+|\*)$/);if(m&&m[1]!=='*')expected=Number(m[1])}
+    all.push(...rows);
+    if(rows.length<EXPORT_PAGE_SIZE)break;
+    from+=rows.length;
+    if(from>1000000)throw new Error(`${table}: превышен предохранительный лимит выгрузки`);
+  }
+  if(expected!==null&&all.length!==expected)throw new Error(`${table}: выгружено ${all.length} строк из ${expected}; выгрузка неполная`);
+  const ids=all.filter(r=>r&&r.id!==undefined).map(r=>String(r.id));
+  if(ids.length!==new Set(ids).size)throw new Error(`${table}: обнаружены повторяющиеся id; выгрузка остановлена`);
+  return {rows:all,count:all.length,expected:expected===null?all.length:expected,complete:true};
+}
+async function collectDatabaseExport(){
+  const data={},report=[];
+  for(const table of EXPORT_TABLES){
+    const result=await fetchAllTableRows(table);data[table]=result.rows;report.push({table,...result});
+  }
+  const count=(t)=>data[t]?.length||0;
+  const periodById=new Map(data.periods.map(p=>[String(p.id),p]));
+  const orders=data.orders.map(o=>({...o,period_title:periodById.get(String(o.period_id))?.title??'',period_archived:!!periodById.get(String(o.period_id))?.archived}));
+  const json={format:'Dead_rub Supabase backup',version:1,exported_at:new Date().toISOString(),source:'GitHub Pages client-side export',tables:data,verification:{complete:report.every(x=>x.complete&&x.count===x.expected),tables:report,total_rows:report.reduce((n,x)=>n+x.count,0)}};
+  if(!json.verification.complete)throw new Error('Проверка полноты не пройдена. Файлы не созданы.');
+  return {data,report,json,orders};
+}
+function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500)}
+function exportTimestamp(){return new Date().toISOString().replace(/[:.]/g,'-').replace(/Z$/,'Z')}
+function styleWorksheet(ws,{landscape=false}={}){
+  ws.views=[{state:'frozen',ySplit:1}];
+  ws.autoFilter=ws.rowCount>1?{from:{row:1,column:1},to:{row:1,column:ws.columnCount}}:undefined;
+  ws.pageSetup={paperSize:ws.workbook?.xlsx?.PaperSize?.A4||9,orientation:landscape?'landscape':'portrait',fitToPage:true,fitToWidth:1,fitToHeight:0,margins:{left:.25,right:.25,top:.45,bottom:.45,header:.2,footer:.2}};
+  ws.getRow(1).height=30;
+  ws.getRow(1).eachCell(c=>{c.font={bold:true,color:{argb:'FFFFFFFF'},size:11};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FF30343B'}};c.alignment={vertical:'middle',horizontal:'center',wrapText:true};c.border={bottom:{style:'medium',color:{argb:'FFFF8C1A'}}}});
+  for(let r=2;r<=ws.rowCount;r++){const row=ws.getRow(r);row.alignment={vertical:'top',wrapText:true};if(r%2===0)row.eachCell(c=>{c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFF3F5F7'}}});row.eachCell(c=>{c.border={bottom:{style:'hair',color:{argb:'FFD9DDE2'}}};if(typeof c.value==='boolean')c.value=c.value?'Да':'Нет'})}
+  ws.eachRow(row=>row.eachCell(c=>{if(c.value instanceof Date)c.numFmt='dd.mm.yyyy hh:mm'}));
+}
+function addJsonSheet(wb,data){
+  const ws=wb.addWorksheet('JSON БД');ws.columns=[{header:'Таблица',key:'table',width:24},{header:'№ строки',key:'index',width:12},{header:'ID',key:'id',width:18},{header:'Полная запись JSON',key:'json',width:100}];
+  for(const table of EXPORT_TABLES){const rows=data[table]||[];if(!rows.length)ws.addRow({table,index:0,id:'',json:'[]'});rows.forEach((row,i)=>ws.addRow({table,index:i+1,id:row?.id??'',json:JSON.stringify(row)}))}
+  styleWorksheet(ws);return ws;
+}
+function prepareWorkbookData(wb,pack){
+  const d=pack.data;
+  const wsO=wb.addWorksheet('Заказы');
+  wsO.columns=[
+    {header:'Период',key:'period',width:20},{header:'Архивный период',key:'archived',width:15},{header:'№ заказа',key:'number',width:15},{header:'Изделие',key:'product',width:30},{header:'Адрес',key:'address',width:32},
+    {header:'ЛДСП',key:'ldsp',width:10},{header:'Фурнитура',key:'furniture',width:12},{header:'Фасады',key:'facades',width:10},{header:'Готово к сборке',key:'assembly_ready',width:16},{header:'Сборщик',key:'assembler',width:18},{header:'Монтажник',key:'installer',width:18},{header:'Примечание',key:'note',width:36},{header:'Проект готов',key:'ready',width:14},{header:'Создан',key:'created_at',width:21},{header:'Обновлён',key:'updated_at',width:21},{header:'ID',key:'id',width:12},{header:'period_id',key:'period_id',width:12}
+  ];
+  pack.orders.forEach(o=>wsO.addRow({period:o.period_title,archived:o.period_archived,number:o.number,product:o.product,address:o.address,ldsp:o.ldsp,furniture:o.furniture,facades:o.facades,assembly_ready:o.assembly_ready,assembler:o.assembler,installer:o.installer,note:o.note,ready:o.ready,created_at:o.created_at,updated_at:o.updated_at,id:o.id,period_id:o.period_id}));styleWorksheet(wsO,{landscape:true});
+  const wsD=wb.addWorksheet('Доделки');wsD.columns=[{header:'№ заказа',key:'order_number',width:17},{header:'Адрес',key:'address',width:32},{header:'Описание',key:'description',width:42},{header:'Монтажник',key:'installer',width:20},{header:'Выполнена',key:'completed',width:14},{header:'Порядок',key:'sort_order',width:12},{header:'Создана',key:'created_at',width:21},{header:'Обновлена',key:'updated_at',width:21},{header:'ID',key:'id',width:12}];d.dodelki.forEach(r=>wsD.addRow(r));styleWorksheet(wsD,{landscape:true});
+  const wsP=wb.addWorksheet('Заказные позиции');wsP.columns=[{header:'№ заказа',key:'order_number',width:18},{header:'Текст / описание',key:'description',width:48},{header:'Заказано',key:'ordered',width:14},{header:'В цеху',key:'in_workshop',width:14},{header:'Порядок',key:'sort_order',width:12},{header:'Создана',key:'created_at',width:21},{header:'Обновлена',key:'updated_at',width:21},{header:'ID',key:'id',width:12}];d.ordered_positions.forEach(r=>wsP.addRow(r));styleWorksheet(wsP,{landscape:true});
+  const wsE=wb.addWorksheet('Расходы');wsE.columns=[{header:'Дата записи',key:'name',width:22},{header:'Дата расхода',key:'date',width:17},{header:'Описание расхода',key:'description',width:44},{header:'Сумма расхода',key:'amount',width:18},{header:'Баланс на момент записи',key:'balance',width:23},{header:'Итог записи',key:'total',width:18},{header:'Строк в записи',key:'items_count',width:15},{header:'ID записи',key:'id',width:13},{header:'Создана',key:'created_at',width:22}];
+  for(const ex of d.expenses){const items=Array.isArray(ex.items)?ex.items:[];if(items.length){items.forEach((it,i)=>wsE.addRow({name:ex.name,date:it.date,description:it.description,amount:it.amount,balance:ex.balance,total:ex.total,items_count:items.length,id:ex.id,created_at:ex.created_at}))}else wsE.addRow({name:ex.name,date:'',description:'(нет отдельных строк расходов)',amount:'',balance:ex.balance,total:ex.total,items_count:0,id:ex.id,created_at:ex.created_at})}
+  styleWorksheet(wsE,{landscape:true});
+  const wsMeta=addJsonSheet(wb,d);
+  // Указываем проверенные количества в примечании к имени листа JSON через отдельные строки.
+  wsMeta.headerFooter={oddFooter:'Dead_rub backup · &D · Страница &P из &N'};
+}
+async function exportFullWorkbook(){
+  document.getElementById('exportMenu')?.classList.add('hidden');
+  try{if(!window.ExcelJS)throw new Error('Не загрузилась библиотека Excel. Проверьте подключение к интернету и обновите страницу.');toast('Проверяю данные Supabase…');const pack=await collectDatabaseExport();const wb=new ExcelJS.Workbook();wb.creator='Dead_rub';wb.created=new Date();wb.modified=new Date();prepareWorkbookData(wb,pack);const buf=await wb.xlsx.writeBuffer();downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Dead_rub_backup_${exportTimestamp()}.xlsx`);toast(`Excel готов · ${pack.report.reduce((n,x)=>n+x.count,0)} строк проверено`)}catch(e){console.error('[exportFullWorkbook]',e);alert('Экспорт остановлен: '+(e?.message||e)+'\n\nФайл не создан, потому что полнота данных не подтверждена.');}
+}
+async function exportFullJson(){
+  document.getElementById('exportMenu')?.classList.add('hidden');
+  try{toast('Проверяю данные Supabase…');const pack=await collectDatabaseExport();const blob=new Blob([JSON.stringify(pack.json,null,2)],{type:'application/json;charset=utf-8'});downloadBlob(blob,`Dead_rub_backup_${exportTimestamp()}.json`);toast(`JSON готов · ${pack.json.verification.total_rows} строк проверено`)}catch(e){console.error('[exportFullJson]',e);alert('Резервная копия не создана: '+(e?.message||e)+'\n\nПолнота данных не подтверждена.');}
+}
+async function exportScheduleWorkbook(){
+  try{
+    if(!window.ExcelJS)throw new Error('Не загрузилась библиотека Excel. Обновите страницу при подключённом интернете.');
+    const rows=await fetchAllTableRows('schedule_state');
+    if(rows.count>1)throw new Error(`В schedule_state найдено ${rows.count} записей вместо ожидаемой одной.`);
+    const raw=rows.rows[0]?.state||{};const state=normaliseScheduleState(raw);
+    const wb=new ExcelJS.Workbook();wb.creator='Dead_rub';const ws=wb.addWorksheet('График');
+    ws.columns=[{header:'Монтажник',key:'worker',width:22},...SCHEDULE_DAYS.map(day=>({header:day,key:day,width:34}))];
+    SCHEDULE_WORKERS.forEach((worker,i)=>{const obj={worker};SCHEDULE_DAYS.forEach((day,j)=>{obj[day]=String(state.cells[scheduleCellKey(i,j)]||'')});ws.addRow(obj)});
+    styleWorksheet(ws,{landscape:true});ws.pageSetup={paperSize:9,orientation:'landscape',fitToPage:true,fitToWidth:1,fitToHeight:1,margins:{left:.25,right:.25,top:.35,bottom:.35,header:.15,footer:.2}};ws.pageSetup.printArea=`A1:F${SCHEDULE_WORKERS.length+1}`;ws.pageSetup.horizontalDpi=300;ws.pageSetup.verticalDpi=300;
+    ws.getColumn(1).eachCell((c,r)=>{if(r>1){c.font={bold:true};c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFE8EAED'}}}});
+    for(let r=2;r<=ws.rowCount;r++){ws.getRow(r).height=78;ws.getRow(r).eachCell(c=>c.alignment={vertical:'top',horizontal:'left',wrapText:true})}
+    const buf=await wb.xlsx.writeBuffer();downloadBlob(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}),`Dead_rub_grafik_${exportTimestamp()}.xlsx`);toast('Excel графика готов к печати');
+  }catch(e){console.error('[exportScheduleWorkbook]',e);alert('Не удалось выгрузить график: '+(e?.message||e));}
+}
+
+
 /* === НАВИГАЦИЯ === */
 const sectionTitles={orders:'Заказы',dodelki:'Доделки',ordered:'Заказные позиции',schedule:'График',dashboard:'Эксп. Dash',expenses:'Расходы',reminders:'Напоминания'};
 function showHome(push=true){
+  setExportVisibility(true);
   stopSectionRefresh();
   activeSectionId=null;
   document.getElementById('siteHeader').style.display='none';
@@ -1724,6 +1727,7 @@ function showHome(push=true){
 }
 function showSection(id,push=true){
   const s=document.getElementById(id);if(!s)return;
+  setExportVisibility(false);
   document.getElementById('siteHeader').style.display='block';
   document.getElementById('cover').style.display='none';
   document.querySelectorAll('.section').forEach(x=>x.style.display='none');
