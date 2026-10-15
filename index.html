@@ -369,6 +369,11 @@ td input[type=text]:focus{background:var(--blue2)}
 }
 .schedule-input:focus{border-color:var(--orange);border-style:solid}
 .schedule-input::placeholder{color:var(--muted)}
+.schedule-notes-card{margin:0 0 14px}
+.schedule-notes-input{display:block;width:100%;min-height:90px;resize:vertical;border:1px dashed var(--line);border-radius:10px;background:var(--panel2);color:var(--text);padding:11px 12px;outline:0;font:inherit;font-size:13px;line-height:1.5}
+.schedule-notes-input:focus{border-color:var(--orange);border-style:solid}
+.schedule-notes-input::placeholder{color:var(--muted)}
+.schedule-notes-status{margin-top:6px;text-align:right;color:var(--muted);font-size:10px}
 
 .schedule-pool{margin:0 0 14px;border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
 .schedule-pool-head{padding:10px 14px;border-bottom:1px solid var(--line);font-weight:750;font-size:13px;color:var(--orange)}
@@ -678,6 +683,11 @@ td input[type=text]:focus{background:var(--blue2)}
    </div>
  </div>
 
+ <div class="card schedule-notes-card">
+   <div class="section-titlebar">📝 Заметки на полях</div>
+   <textarea id="scheduleNotes" class="schedule-notes-input" placeholder="Оставьте здесь заметки, важные детали или напоминания…" oninput="setScheduleNotes(this.value)"></textarea>
+   <div class="schedule-notes-status" id="scheduleNotesStatus">Сохраняется автоматически</div>
+ </div>
  <div class="card"><div class="section-titlebar">Расписание монтажников</div><div class="schedule-wrap" style="overflow-x:auto"><div id="scheduleBoard" class="schedule-board"></div></div></div>
  <div class="schedule-hint">Заполняйте ячейки вручную — время, номер заказа, комментарий. Всё сохраняется автоматически. Заказы, номер которых встречается в графике, выделяются серым.</div>
  <div class="schedule-actions"><button class="btn" onclick="exportScheduleWorkbook()">⬇ Скачать график (Excel)</button><button class="btn btn-danger" onclick="clearSchedule()">Очистить</button></div>
@@ -1046,7 +1056,7 @@ function normaliseScheduleState(raw){
       cells[k]=parts.filter(Boolean).join('\n');
     }
   });
-  return {names:[...SCHEDULE_WORKERS],cells};
+  return {names:[...SCHEDULE_WORKERS],cells,notes:typeof s.notes==='string'?s.notes:''};
 }
 async function loadScheduleState(){
  try{
@@ -1063,6 +1073,20 @@ async function saveScheduleState(showError=true){
  catch(e){if(showError)toast('Ошибка сохранения графика')}
 }
 function queueScheduleSave(){clearTimeout(scheduleSaveTimer);scheduleSaveTimer=setTimeout(()=>saveScheduleState(),180)}
+function setScheduleNotes(value){
+  scheduleState.notes=String(value??'');
+  const status=document.getElementById('scheduleNotesStatus');
+  if(status)status.textContent='Сохраняем…';
+  clearTimeout(scheduleSaveTimer);
+  scheduleSaveTimer=setTimeout(async()=>{
+    await saveScheduleState();
+    if(status)status.textContent='Сохранено';
+  },500);
+}
+function renderScheduleNotes(){
+  const field=document.getElementById('scheduleNotes');
+  if(field && field.value!==(scheduleState.notes||''))field.value=scheduleState.notes||'';
+}
 
 function renderSchedule(){
  const board=document.getElementById('scheduleBoard');if(!board)return;
@@ -1130,11 +1154,11 @@ function renderBrickSources(){
   document.getElementById('scheduleMountingCount').textContent=s.mounting.length;
   document.getElementById('scheduleDodelkiCount').textContent=s.fixes.length;
 }
-function renderScheduleAll(){renderSchedule();renderBrickSources()}
+function renderScheduleAll(){renderSchedule();renderBrickSources();renderScheduleNotes()}
 async function clearSchedule(){
-  if(!confirmDelete('Будут очищены все записи в графике.'))return;
-  scheduleState={names:[...SCHEDULE_WORKERS],cells:{}};
-  await saveScheduleState();renderScheduleAll();toast('График очищен');
+  if(!confirmDelete('Будут очищены все записи в расписании. Заметки на полях останутся.'))return;
+  scheduleState={names:[...SCHEDULE_WORKERS],cells:{},notes:scheduleState.notes||''};
+  await saveScheduleState();renderScheduleAll();toast('Расписание очищено');
 }
 
 /* === ЗАКАЗЫ === */
@@ -1655,7 +1679,7 @@ async function collectDatabaseExport(){
   if(!json.verification.complete)throw new Error('Проверка полноты не пройдена. Файлы не созданы.');
   return {data,report,json,orders};
 }
-function downloadBlob(blob,filename){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500)}
+function downloadBlob(blob,filename){const objectUrl=window.URL.createObjectURL(blob),a=document.createElement('a');a.href=objectUrl;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>window.URL.revokeObjectURL(objectUrl),1500)}
 function exportTimestamp(){return new Date().toISOString().replace(/[:.]/g,'-').replace(/Z$/,'Z')}
 function styleWorksheet(ws,{landscape=false}={}){
   ws.views=[{state:'frozen',ySplit:1}];
