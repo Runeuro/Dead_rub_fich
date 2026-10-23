@@ -576,6 +576,7 @@ td input[type=text]:focus{background:var(--blue2)}
 .balance-modal input{width:100%;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--text);padding:12px;outline:0}
 .balance-modal input:focus{border-color:var(--orange)}
 .balance-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.global-search-modal{width:min(760px,100%);max-height:85vh;display:flex;flex-direction:column;gap:10px}.global-search-results{overflow:auto;min-height:90px;max-height:55vh;display:flex;flex-direction:column;gap:8px}.global-result{padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);font-size:13px;line-height:1.45}.global-result b{color:var(--orange);display:block;margin-bottom:3px}.expense-balance input{cursor:default}.expense-top{grid-template-columns:1fr}
 
 
 .export-control{display:none;position:fixed;top:12px;left:84px;z-index:501}.export-control.is-home{display:block}
@@ -625,6 +626,7 @@ td input[type=text]:focus{background:var(--blue2)}
     <button class="menu-card-sm" onclick="showSection('dashboard')"><span class="sm-icon">📊</span><span>Эксп. Dash</span></button>
     <a class="menu-card-sm" href="https://disk.yandex.ru/client/disk/%D0%92%D0%A1%D0%95%20%D0%9A%D0%9B%D0%98%D0%95%D0%9D%D0%A2%D0%AB" target="_blank" rel="noopener noreferrer"><span class="sm-icon">🗂️</span><span>Диск</span></a>
     <button class="menu-card-sm" onclick="showSection('expenses')"><span class="sm-icon">💰</span><span>Расходы</span></button>
+    <button class="menu-card-sm" onclick="openGlobalSearch()"><span class="sm-icon">🔎</span><span>Поиск</span></button>
   </div>
 </div></section>
 
@@ -761,7 +763,7 @@ td input[type=text]:focus{background:var(--blue2)}
   <div class="section-head">
     <div>
       <h2 class="section-title">💰 Расходы</h2>
-      <div class="section-sub">Введите баланс, заполните расходы и нажмите «Готово» — список уйдёт в историю</div>
+      <div class="section-sub">Баланс автоматически учитывает добавленные расходы. Внесённые расходы сохраняются в истории.</div>
     </div>
   </div>
 
@@ -769,13 +771,10 @@ td input[type=text]:focus{background:var(--blue2)}
     <div class="expense-top">
       <div class="expense-balance">
         <label>Баланс</label>
-        <input id="expenseBalance" type="text" inputmode="decimal" placeholder="0" oninput="onBalanceInput()">
+        <input id="expenseBalance" type="text" inputmode="decimal" placeholder="0,00" readonly aria-label="Текущий баланс">
         <button class="btn btn-sm balance-deposit" onclick="openBalanceDeposit()">＋ Внести на баланс</button>
       </div>
-      <div class="expense-total" id="expenseTotalBox">
-        <label>Итог</label>
-        <div class="val zero" id="expenseTotalVal">0</div>
-      </div>
+
     </div>
 
     <div class="card">
@@ -792,10 +791,7 @@ td input[type=text]:focus{background:var(--blue2)}
       </div>
     </div>
 
-    <div class="expense-actions">
-      <button class="btn btn-danger" onclick="resetExpenses()">Очистить</button>
-      <button class="btn btn-primary" onclick="commitExpenses()">Готово</button>
-    </div>
+
   </div>
 
   <div class="expense-history" id="expenseHistory">
@@ -815,6 +811,14 @@ td input[type=text]:focus{background:var(--blue2)}
     </div>
   </div>
 </div>
+<div id="globalSearchModal" class="balance-modal-backdrop hidden" onclick="if(event.target===this)closeGlobalSearch()">
+  <div class="balance-modal global-search-modal">
+    <h3>Поиск по всей базе</h3>
+    <input id="globalSearchInput" type="search" placeholder="Номер, имя, фамилия, адрес или любое слово…" oninput="runGlobalSearch()">
+    <div id="globalSearchResults" class="global-search-results"><div class="empty">Введите запрос для поиска</div></div>
+    <div class="balance-modal-actions"><button class="btn" onclick="closeGlobalSearch()">Закрыть</button></div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -828,6 +832,7 @@ const SCHEDULE_DAYS=['ПН','ВТ','СР','ЧТ','ПТ'];
 const SCHEDULE_WORKERS=['Игорь','Константин К','Сергей Ю','Владимир','Павел','Константин Х','Сергей Ш'];
 let scheduleState={names:[...SCHEDULE_WORKERS],cells:{}};
 let expenseRows=[];
+let expenseBaseBalance=0;
 let expenseDraftTimer=null;
 let expenseDraftLoaded=false;
 let openExpenseHistoryIds=new Set();
@@ -902,9 +907,10 @@ async function loadExpensesSlice(){
     if(!expenseDraftLoaded || !isEditing()){
       const draft=Array.isArray(ed)&&ed[0]?ed[0]:null;
       expenseRows=draft&&Array.isArray(draft.items)?draft.items.map(x=>({date:x.date||'',description:x.description||'',amount:x.amount??''})):[];
-      const bal=draft?parseNum(draft.balance):0;
+      const bal=draft?roundMoney(parseNum(draft.balance)):0;
+      expenseBaseBalance=bal;
       const be=document.getElementById('expenseBalance');
-      if(be)be.value=bal?String(bal):'';
+      if(be)be.value=fmtMoney(bal-expensesSum());
       expenseDraftLoaded=true;
     }
     setStatus('● Онлайн',true);
@@ -1103,7 +1109,7 @@ function renderSchedule(){
 function scheduleBricks(){
  const mounting=[],fixes=[];
  for(const p of ordersData)for(const r of p.rows){
-   if(!r.ready&&r.ldsp&&r.furniture)mounting.push({type:'M',id:String(r.id),number:r.number||'Без номера',worker:r.assembler||'',product:r.product||'',address:r.address||''});
+   if(!r.ready&&r.ldsp&&r.furniture&&(r.facades||r.assembly_ready))mounting.push({type:'M',id:String(r.id),number:r.number||'Без номера',worker:r.assembler||'',product:r.product||'',address:r.address||''});
  }
  for(const r of dodelkiRows){
    if(!r.completed)fixes.push({type:'D',id:String(r.id),number:r.order_number||'Без номера',worker:r.installer||'',product:r.description||'',address:r.address||''});
@@ -1188,9 +1194,10 @@ async function loadAll(silent=false){
   if(!expenseDraftLoaded || !isEditing()){
     const draft=Array.isArray(ed)&&ed[0]?ed[0]:null;
     expenseRows=draft&&Array.isArray(draft.items)?draft.items.map(x=>({date:x.date||'',description:x.description||'',amount:x.amount??''})):[];
-    const bal=draft?parseNum(draft.balance):0;
+    const bal=draft?roundMoney(parseNum(draft.balance)):0;
+    expenseBaseBalance=bal;
     const be=document.getElementById('expenseBalance');
-    if(be)be.value=bal?String(bal):'';
+    if(be)be.value=fmtMoney(bal-expensesSum());
     expenseDraftLoaded=true;
   }
   renderOrders();renderArchivePanel();renderDodelki();renderOrdered();renderScheduleAll();renderDashboard();renderExpenseRows();renderExpenseTotal();renderExpenseHistory();renderReminders();renderHomeDate();
@@ -1346,8 +1353,8 @@ function queueExpenseDraftSave(){
   expenseDraftTimer=setTimeout(saveExpenseDraft,350);
 }
 async function saveExpenseDraft(){
-  const balance=parseNum(document.getElementById('expenseBalance')?.value||0);
-  const items=expenseRows.map(r=>({date:r.date||'',description:r.description||'',amount:parseNum(r.amount)}));
+  const balance=roundMoney(expenseBaseBalance);
+  const items=expenseRows.map(r=>({date:r.date||'',description:r.description||'',amount:roundMoney(parseNum(r.amount))}));
   try{
     await api('expense_drafts?id=eq.1',{method:'PATCH',body:JSON.stringify({balance,items,updated_at:new Date().toISOString()})});
   }catch(e){}
@@ -1365,11 +1372,12 @@ function renderExpenseRows(){
     <tr>
       <td><input type="text" value="${esc(r.date)}" placeholder="ДД.ММ.ГГ" oninput="editExpense(${i},'date',this.value)"></td>
       <td><input type="text" value="${esc(r.description)}" placeholder="На что потрачено…" oninput="editExpense(${i},'description',this.value)"></td>
-      <td><input type="text" value="${esc(r.amount)}" placeholder="0" inputmode="decimal" oninput="editExpense(${i},'amount',this.value)"></td>
+      <td><input type="text" value="${esc(r.amount)}" placeholder="0" inputmode="decimal" oninput="editExpense(${i},'amount',this.value)" onblur="formatExpenseInput(${i},this)"></td>
       <td><button class="delete" onclick="delExpenseRow(${i})">×</button></td>
     </tr>`).join('');
 }
-function editExpense(i,k,v){expenseRows[i][k]=v;if(k==='amount')renderExpenseTotal();queueExpenseDraftSave()}
+function formatExpenseInput(i,input){if(String(expenseRows[i]?.amount??'').trim()==='')return;const n=parseNum(expenseRows[i].amount);expenseRows[i].amount=fmtMoney(roundMoney(n));input.value=expenseRows[i].amount;renderExpenseTotal();queueExpenseDraftSave()}
+function editExpense(i,k,v){expenseRows[i][k]=k==='amount'&&String(v).trim()!==''?String(v):v;renderExpenseTotal();queueExpenseDraftSave()}
 function onBalanceInput(){renderExpenseTotal();queueExpenseDraftSave()}
 function roundMoney(n){return Math.round((Number(n)||0)*100)/100}
 function openBalanceDeposit(){
@@ -1378,64 +1386,39 @@ function openBalanceDeposit(){
   const i=document.getElementById('balanceDepositAmount');if(i){i.value='';setTimeout(()=>i.focus(),50)}
 }
 function closeBalanceDeposit(){document.getElementById('balanceModal')?.classList.add('hidden')}
-function confirmBalanceDeposit(){
+async function confirmBalanceDeposit(){
   const add=roundMoney(parseNum(document.getElementById('balanceDepositAmount')?.value||0));
   if(add<=0){toast('Введите сумму больше нуля');return}
-  const input=document.getElementById('expenseBalance');
-  const current=roundMoney(parseNum(input?.value||0));
-  if(input)input.value=String(roundMoney(current+add)).replace('.',',');
-  renderExpenseTotal();queueExpenseDraftSave();closeBalanceDeposit();toast('Сумма внесена на баланс')
-}
-function addExpenseRow(){
-  const today=new Date();
-  const dd=String(today.getDate()).padStart(2,'0');
-  const mm=String(today.getMonth()+1).padStart(2,'0');
-  expenseRows.push({date:`${dd}.${mm}`,description:'',amount:''});
-  renderExpenseRows();renderExpenseTotal();queueExpenseDraftSave();
-  const inputs=document.querySelectorAll('#expenseRowsBody tr:last-child input');
-  if(inputs[1])inputs[1].focus();
-}
-function delExpenseRow(i){if(!confirmDelete('Строка расхода будет удалена из текущего черновика.'))return;expenseRows.splice(i,1);renderExpenseRows();renderExpenseTotal();queueExpenseDraftSave()}
-function expensesSum(){return expenseRows.reduce((s,r)=>s+parseNum(r.amount),0)}
-function renderExpenseTotal(){
-  const bal=roundMoney(parseNum(document.getElementById('expenseBalance')?.value||0));
-  const sum=expensesSum();
-  const total=bal-sum;
-  const box=document.getElementById('expenseTotalBox');
-  const val=document.getElementById('expenseTotalVal');
-  if(!box||!val)return;
-  val.textContent=fmtMoney(total);
-  box.classList.toggle('negative',total<0);
-  val.classList.toggle('zero',total===0);
-}
-async function resetExpenses(){
-  if(!expenseRows.length && !parseNum(document.getElementById('expenseBalance')?.value||0))return;
-  if(!confirmDelete('Будут очищены текущие расходы и баланс.'))return;
-  expenseRows=[];document.getElementById('expenseBalance').value='';
-  renderExpenseRows();renderExpenseTotal();
-  try{await clearExpenseDraft();toast('Текущая таблица очищена')}catch(e){toast('Не удалось сохранить очистку')}
-}
-async function commitExpenses(){
-  const bal=roundMoney(parseNum(document.getElementById('expenseBalance')?.value||0));
-  const sum=expensesSum();
-  if(!expenseRows.length && bal===0){toast('Нечего сохранять');return}
-  const total=bal-sum;
-  const zeroOut=confirm('Обнулить баланс после сохранения?\n\nОК — обнулить баланс (0)\nОтмена — перенести текущий итог в баланс');
-  const newBalance=zeroOut?0:total;
+  const oldBalance=roundMoney(expenseBaseBalance);
+  const balanceBeforeExpenses=roundMoney(oldBalance+add);
+  const sum=roundMoney(expensesSum());
+  const newBalance=roundMoney(balanceBeforeExpenses-sum);
+  const items=expenseRows.map(r=>({date:r.date||'',description:r.description||'',amount:roundMoney(parseNum(r.amount))}));
   const now=new Date();
   const name=now.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'})+' '+now.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
-  const items=expenseRows.map(r=>({date:r.date||'',description:r.description||'',amount:parseNum(r.amount)}));
   try{
-    await api('expenses',{method:'POST',body:JSON.stringify({name,balance:bal,items,total})});
-    expenseRows=[];document.getElementById('expenseBalance').value=newBalance?String(newBalance):'';
-    renderExpenseRows();renderExpenseTotal();
-    await clearExpenseDraft(newBalance);
-    await loadExpensesSlice();
-    renderExpenseHistory();
-    toast(zeroOut?'Сохранено · баланс обнулён':'Сохранено · итог перенесён в баланс');
-  }catch(e){
-    toast('Не удалось сохранить. Проверьте таблицы расходов в Supabase.');
-  }
+    if(items.length){
+      await api('expenses',{method:'POST',body:JSON.stringify({name,balance:balanceBeforeExpenses,items,total:newBalance})});
+      expenseRows=[];
+    }
+    expenseBaseBalance=newBalance;
+    const input=document.getElementById('expenseBalance');if(input)input.value=fmtMoney(expenseBaseBalance);
+    await clearExpenseDraft(expenseBaseBalance);
+    await loadExpensesSlice();renderExpenseRows();renderExpenseTotal();renderExpenseHistory();
+    closeBalanceDeposit();toast(items.length?'Расходы сохранены в истории, баланс обновлён':'Баланс пополнен');
+  }catch(e){console.error(e);toast('Не удалось сохранить изменения. Проверьте соединение с базой.');}
+}
+function addExpenseRow(){
+  const today=new Date();const dd=String(today.getDate()).padStart(2,'0');const mm=String(today.getMonth()+1).padStart(2,'0');
+  expenseRows.push({date:`${dd}.${mm}`,description:'',amount:''});
+  renderExpenseRows();renderExpenseTotal();queueExpenseDraftSave();
+  const inputs=document.querySelectorAll('#expenseRowsBody tr:last-child input');if(inputs[1])inputs[1].focus();
+}
+function delExpenseRow(i){if(!confirmDelete('Строка расхода будет удалена из текущего черновика.'))return;expenseRows.splice(i,1);renderExpenseRows();renderExpenseTotal();queueExpenseDraftSave()}
+function expensesSum(){return roundMoney(expenseRows.reduce((s,r)=>s+roundMoney(parseNum(r.amount)),0))}
+function renderExpenseTotal(){
+  const bal=roundMoney(expenseBaseBalance-expensesSum());
+  const input=document.getElementById('expenseBalance');if(input)input.value=fmtMoney(bal);
 }
 async function deleteExpenseHistory(id){
   if(!confirmDelete('Сохранённая таблица расходов будет удалена из истории.'))return;
@@ -1736,6 +1719,33 @@ async function exportScheduleWorkbook(){
   }catch(e){console.error('[exportScheduleWorkbook]',e);alert('Не удалось выгрузить график: '+(e?.message||e));}
 }
 
+
+/* === ГЛОБАЛЬНЫЙ ПОИСК ПО ВСЕМ РАЗДЕЛАМ === */
+function openGlobalSearch(){const m=document.getElementById('globalSearchModal');m?.classList.remove('hidden');const i=document.getElementById('globalSearchInput');if(i){i.value='';document.getElementById('globalSearchResults').innerHTML='<div class="empty">Введите запрос для поиска</div>';setTimeout(()=>i.focus(),40)}}
+function closeGlobalSearch(){document.getElementById('globalSearchModal')?.classList.add('hidden')}
+let globalSearchTimer=null,globalSearchSeq=0;
+function runGlobalSearch(){clearTimeout(globalSearchTimer);globalSearchTimer=setTimeout(()=>performGlobalSearch(),180)}
+async function performGlobalSearch(){
+ const q=(document.getElementById('globalSearchInput')?.value||'').trim().toLocaleLowerCase('ru');const out=document.getElementById('globalSearchResults');if(!out)return;
+ if(q.length<1){out.innerHTML='<div class="empty">Введите запрос для поиска</div>';return}
+ const seq=++globalSearchSeq;out.innerHTML='<div class="empty">Ищу по всем таблицам…</div>';
+ const sources=[];const add=(where,record,fields)=>{const shown=fields.map(([label,val])=>val==null?'':`${label}: ${val}`).filter(Boolean);const known=new Set(fields.map(([label])=>label));const extra=Object.entries(record||{}).filter(([k,v])=>!known.has(k)&&v!=null&&typeof v!=='object'&&String(v).trim()&&String(v).toLocaleLowerCase('ru').includes(q)).map(([k,v])=>`${k}: ${v}`);const text=[...shown,...extra].join(' · ');const searchable=JSON.stringify(record||{}).toLocaleLowerCase('ru');if(searchable.includes(q)||text.toLocaleLowerCase('ru').includes(q))sources.push({where,text:text||JSON.stringify(record)})};
+ try{
+  const [ps,os,ds,ops,ex,rs,ed,ss]=await Promise.all([
+   api('periods?select=*&order=sort_order.asc'),api('orders?select=*&order=sort_order.asc'),api('dodelki?select=*&order=created_at.desc'),api('ordered_positions?select=*&order=sort_order.asc'),api('expenses?select=*&order=created_at.desc'),api('reminders?select=*&order=event_date.asc'),api('expense_drafts?select=*'),api('schedule_state?select=*')
+  ]);
+  const periods=new Map((ps||[]).map(x=>[x.id,x.title]));
+  (os||[]).forEach(r=>add('Заказы · '+(periods.get(r.period_id)||'Период'),r,[['№ заказа',r.number],['Изделие',r.product],['Адрес',r.address],['Сборщик',r.assembler],['Монтажник',r.installer],['Комментарий',r.note],['Статус',r.ready?'Готово':'В работе']]));
+  (ds||[]).forEach(r=>add('Доделки',r,[['№ заказа',r.order_number],['Адрес',r.address],['Описание',r.description],['Монтажник',r.installer],['Статус',r.completed?'Выполнено':'В работе']]));
+  (ops||[]).forEach(r=>add('Заказные позиции',r,[['№ заказа',r.order_number],['Описание',r.description],['Заказано',r.ordered?'Да':'Нет'],['В цеху',r.in_workshop?'Да':'Нет']]));
+  (ex||[]).forEach(r=>{const its=Array.isArray(r.items)?r.items:[];add('Расходы · история',r,[['Период',r.name],['Сумма',fmtMoney(r.total)],['Строки',its.map(x=>x.description+' '+x.amount).join(' ')]]);its.forEach(it=>add('Расходы · '+(r.name||'История'),it,[['Дата',it.date],['Описание',it.description],['Сумма',fmtMoney(it.amount)]]))});
+  (rs||[]).forEach(r=>add('Напоминания',r,[['Дата',r.event_date],['Описание',r.description],['Тип',r.type]]));
+  (ed||[]).forEach(r=>add('Расходы · текущий черновик',r,[['Баланс',fmtMoney(r.balance)],['Расходы',JSON.stringify(r.items||[])]]));
+  (ss||[]).forEach(r=>add('График · расписание и заметки',r,[['Данные графика',JSON.stringify(r.state||{})]]));
+  if(seq!==globalSearchSeq)return;
+  out.innerHTML=sources.length?sources.slice(0,150).map(x=>`<div class="global-result"><b>${esc(x.where)}</b>${esc(x.text)}</div>`).join(''):`<div class="empty">Ничего не найдено по запросу «${esc(q)}»</div>`;
+ }catch(e){if(seq===globalSearchSeq)out.innerHTML='<div class="empty">Не удалось выполнить поиск: проверьте соединение с базой.</div>';console.error('[globalSearch]',e)}
+}
 
 /* === НАВИГАЦИЯ === */
 const sectionTitles={orders:'Заказы',dodelki:'Доделки',ordered:'Заказные позиции',schedule:'График',dashboard:'Эксп. Dash',expenses:'Расходы',reminders:'Напоминания'};
