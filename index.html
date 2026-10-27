@@ -1013,20 +1013,60 @@ function renderOrdered(){
   const visible=orderedRows.filter(r=>!q||String((r.order_number||'')+' '+(r.description||'')).toLowerCase().includes(q));
   const active=visible.filter(r=>!orderedDone(r));
   const done=visible.filter(r=>orderedDone(r));
-
-  const head=`<table class="ordered-table"><colgroup><col style="width:120px"><col><col style="width:120px"><col style="width:120px"><col style="width:35px"></colgroup><thead><tr><th>№ заказа</th><th>Текст / описание</th><th>Заказано</th><th>В цеху</th><th></th></tr></thead><tbody>`;
-
+  const head=`<table class="ordered-table"><colgroup><col style="width:120px"><col><col style="width:105px"><col style="width:105px"><col style="width:100px"></colgroup><thead><tr><th>№ заказа</th><th>Наименование</th><th>Заказано</th><th>В цеху</th><th>Строка</th></tr></thead><tbody>`;
   const dk=document.getElementById('orderedDesktop'),dm=document.getElementById('orderedMobile');
-  dk.innerHTML=head+(active.length?active.map(orderedTableRow).join(''):'<tr><td colspan="5" class="empty">Нет активных позиций</td></tr>')+'</tbody></table>';
+  dk.innerHTML=head+orderedGroupedRows(active)+(active.length?'':'<tr><td colspan="5" class="empty">Нет активных позиций</td></tr>')+'</tbody></table>';
   dm.innerHTML=active.length?active.map(orderedMobileRow).join(''):'<div class="empty">Нет активных позиций</div>';
-
   const dkd=document.getElementById('orderedDoneDesktop'),dmd=document.getElementById('orderedDoneMobile');
-  dkd.innerHTML=head+(done.length?done.map(orderedTableRow).join(''):'<tr><td colspan="5" class="empty">Пока ничего не готово</td></tr>')+'</tbody></table>';
+  dkd.innerHTML=head+orderedGroupedRows(done)+(done.length?'':'<tr><td colspan="5" class="empty">Пока ничего не готово</td></tr>')+'</tbody></table>';
   dmd.innerHTML=done.length?done.map(orderedMobileRow).join(''):'<div class="empty">Пока ничего не готово</div>';
-
   document.getElementById('orderedDoneCount').textContent=done.length;
 }
+function orderedGroupedRows(rows){
+  const groups=new Map();
+  rows.forEach(r=>{const key=String(r.order_number||'').trim()||'__empty_'+r.id;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r)});
+  let html='';
+  for(const [key,group] of groups){
+    group.forEach((r,n)=>{const i=orderedRows.indexOf(r);html+=`<tr class="${orderedDone(r)?'completed':''}">${n===0?`<td rowspan="${group.length}" style="vertical-align:top"><input type="text" value="${esc(r.order_number)}" onchange="editOrdered(${i},'order_number',this.value)" aria-label="Номер заказа"><button class="btn btn-sm" style="margin:4px;width:calc(100% - 8px)" onclick="addOrderedToOrder('${esc(String(r.order_number||'')).replace(/'/g,'&#39;')}')">＋ Позиция</button></td>`:''}<td><input type="text" value="${esc(r.description)}" onchange="editOrdered(${i},'description',this.value)" placeholder="Наименование позиции"></td><td class="center"><input class="big-check" type="checkbox" ${r.ordered?'checked':''} onchange="toggleOrdered(${i},'ordered',this.checked)"></td><td class="center"><input class="big-check" type="checkbox" ${r.in_workshop?'checked':''} onchange="toggleOrdered(${i},'in_workshop',this.checked)"></td><td><button class="delete" onclick="delOrdered(${i})" title="Удалить позицию">×</button></td></tr>`});
+  }
+  return html;
+}
 function orderedTableRow(r){const i=orderedRows.indexOf(r);return `<tr class="${orderedDone(r)?'completed':''}"><td><input type="text" value="${esc(r.order_number)}" onchange="editOrdered(${i},'order_number',this.value)"></td><td><input type="text" value="${esc(r.description)}" onchange="editOrdered(${i},'description',this.value)"></td><td class="center"><input class="big-check" type="checkbox" ${r.ordered?'checked':''} onchange="toggleOrdered(${i},'ordered',this.checked)"></td><td class="center"><input class="big-check" type="checkbox" ${r.in_workshop?'checked':''} onchange="toggleOrdered(${i},'in_workshop',this.checked)"></td><td><button class="delete" onclick="delOrdered(${i})">×</button></td></tr>`}
+async function editOrdered(i,k,v){
+  const row=orderedRows[i]; if(!row)return;
+  if(k==='order_number'){
+    const number=String(v||'').trim();
+    const duplicates=number?orderedRows.filter((r,j)=>j!==i&&String(r.order_number||'').trim().toLowerCase()===number.toLowerCase()):[];
+    if(duplicates.length){
+      const ok=confirm(`Заказ № ${number} уже существует (${duplicates.length} поз.). Объединить позиции в один заказ?`);
+      if(!ok){renderOrdered();return;}
+      v=number;
+    }
+  }
+  row[k]=v;
+  try{await api('ordered_positions?id=eq.'+row.id,{method:'PATCH',body:JSON.stringify({[k]:v,updated_at:new Date().toISOString()})});renderOrdered();}
+  catch(e){toast('Ошибка сохранения');}
+}
+async function toggleOrdered(i,k,v){orderedRows[i][k]=v;renderOrdered();try{await api('ordered_positions?id=eq.'+orderedRows[i].id,{method:'PATCH',body:JSON.stringify({[k]:v,updated_at:new Date().toISOString()})})}catch(e){toast('Ошибка сохранения')}}
+async function addOrdered(){
+  const number=prompt('Номер заказа для новой позиции (можно оставить пустым):','');
+  if(number===null)return;
+  const clean=number.trim();
+  if(clean&&orderedRows.some(r=>String(r.order_number||'').trim().toLowerCase()===clean.toLowerCase())){
+    if(!confirm(`Заказ № ${clean} уже существует. Добавить новую позицию к нему?`))return;
+    await addOrderedToOrder(clean);return;
+  }
+  await createOrderedRow(clean);
+}
+async function addOrderedToOrder(number){await createOrderedRow(String(number||'').trim())}
+async function createOrderedRow(number){
+  try{
+    const payload={order_number:number||'',description:'',ordered:false,in_workshop:false,sort_order:orderedRows.length};
+    const x=await api('ordered_positions',{method:'POST',body:JSON.stringify(payload)});
+    orderedRows.push(x[0]);renderOrdered();toast('Позиция добавлена');
+  }catch(e){toast('Не удалось добавить строку')}
+}
+async function delOrdered(i){if(!confirmDelete('Заказная позиция будет удалена без возможности восстановления.'))return;try{await api('ordered_positions?id=eq.'+orderedRows[i].id,{method:'DELETE'});orderedRows.splice(i,1);renderOrdered()}catch(e){toast('Ошибка удаления')}}
 function orderedMobileRow(r){const i=orderedRows.indexOf(r);return `<div class="m-row ${orderedDone(r)?'completed':''}"><div class="m-grid"><div class="m-field"><div class="m-label">№ заказа</div><input class="m-input" value="${esc(r.order_number)}" onchange="editOrdered(${i},'order_number',this.value)"></div><div class="m-field wide"><div class="m-label">Текст / описание</div><input class="m-input" value="${esc(r.description)}" onchange="editOrdered(${i},'description',this.value)"></div></div><div class="m-checks" style="grid-template-columns:1fr 1fr"><div class="m-check"><input class="big-check" type="checkbox" ${r.ordered?'checked':''} onchange="toggleOrdered(${i},'ordered',this.checked)"><br>Заказано</div><div class="m-check"><input class="big-check" type="checkbox" ${r.in_workshop?'checked':''} onchange="toggleOrdered(${i},'in_workshop',this.checked)"><br>В цеху</div></div><div class="m-actions"><span></span><button class="delete" onclick="delOrdered(${i})">Удалить ×</button></div></div>`}
 async function editOrdered(i,k,v){orderedRows[i][k]=v;try{await api('ordered_positions?id=eq.'+orderedRows[i].id,{method:'PATCH',body:JSON.stringify({[k]:v,updated_at:new Date().toISOString()})})}catch(e){toast('Ошибка сохранения')}}
 async function toggleOrdered(i,k,v){orderedRows[i][k]=v;renderOrdered();try{await api('ordered_positions?id=eq.'+orderedRows[i].id,{method:'PATCH',body:JSON.stringify({[k]:v,updated_at:new Date().toISOString()})})}catch(e){toast('Ошибка сохранения')}}
