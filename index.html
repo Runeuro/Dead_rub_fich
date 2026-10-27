@@ -577,6 +577,15 @@ td input[type=text]:focus{background:var(--blue2)}
 .balance-modal input:focus{border-color:var(--orange)}
 .balance-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .global-search-modal{width:min(760px,100%);max-height:85vh;display:flex;flex-direction:column;gap:10px}.global-search-results{overflow:auto;min-height:90px;max-height:55vh;display:flex;flex-direction:column;gap:8px}.global-result{padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);font-size:13px;line-height:1.45}.global-result b{color:var(--orange);display:block;margin-bottom:3px}.expense-balance input{cursor:default}.expense-top{grid-template-columns:1fr}
+.cover{flex-direction:column;gap:14px}
+.home-tomorrow{width:min(1180px,100%);padding:13px 18px;border-radius:18px;background:var(--glass-bg);backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%);border:1px solid var(--glass-border);box-shadow:0 8px 24px rgba(0,0,0,.12);color:var(--muted)}
+.home-tomorrow-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;margin-bottom:8px}
+.home-tomorrow-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px}
+.home-tomorrow-item{padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--panel) 65%,transparent);font-size:12px;line-height:1.4;min-width:0}
+.home-tomorrow-item b{color:var(--text);display:block;font-size:12px}.home-tomorrow-item span{display:block;overflow-wrap:anywhere}.home-tomorrow-empty{font-size:12px;color:var(--muted);padding:4px 0}
+.todo-list{display:flex;flex-direction:column;gap:7px}.todo-item{display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:11px;background:var(--panel2)}.todo-item.done .todo-text{text-decoration:line-through;color:var(--muted)}.todo-text{flex:1;min-width:0;overflow-wrap:anywhere;white-space:pre-wrap}.todo-item input{margin-top:3px;accent-color:var(--orange);width:18px;height:18px}.todo-form{display:flex;gap:8px;margin-bottom:12px}.todo-form input{flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--text);padding:11px 12px;outline:0}.todo-form input:focus{border-color:var(--orange)}
+.quick-modal{width:min(420px,100%)}.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.quick-actions .btn{min-height:48px;text-align:left}
+@media(max-width:760px){.home-tomorrow{padding:11px 12px}.home-tomorrow-list{grid-template-columns:1fr}.todo-form{flex-wrap:wrap}.todo-form input{flex-basis:100%}}
 
 
 .export-control{display:none;position:fixed;top:12px;left:84px;z-index:501}.export-control.is-home{display:block}
@@ -627,8 +636,12 @@ td input[type=text]:focus{background:var(--blue2)}
     <a class="menu-card-sm" href="https://disk.yandex.ru/client/disk/%D0%92%D0%A1%D0%95%20%D0%9A%D0%9B%D0%98%D0%95%D0%9D%D0%A2%D0%AB" target="_blank" rel="noopener noreferrer"><span class="sm-icon">🗂️</span><span>Диск</span></a>
     <button class="menu-card-sm" onclick="showSection('expenses')"><span class="sm-icon">💰</span><span>Расходы</span></button>
     <button class="menu-card-sm" onclick="openGlobalSearch()"><span class="sm-icon">🔎</span><span>Поиск</span></button>
+    <button class="menu-card-sm" onclick="showSection('todo')"><span class="sm-icon">📝</span><span>Дела</span></button>
+    <button class="menu-card-sm" onclick="openQuickAdd()"><span class="sm-icon">＋</span><span>Быстро добавить</span></button>
   </div>
-</div></section>
+</div>
+<div class="home-tomorrow"><div class="home-tomorrow-head"><span>🗓️ Завтра · монтажи и доделки</span><button class="btn btn-sm" onclick="showSection('schedule')">Открыть график</button></div><div id="homeTomorrowList" class="home-tomorrow-list"><div class="home-tomorrow-empty">Загружаем расписание…</div></div></div>
+</section>
 
 <main class="container">
 <section id="orders" class="section">
@@ -759,6 +772,14 @@ td input[type=text]:focus{background:var(--blue2)}
   </div>
 </section>
 
+<section id="todo" class="section">
+  <div class="section-head"><div><h2 class="section-title">📝 Дела</h2><div class="section-sub">Короткие заметки: что сделать, купить или не забыть</div></div></div>
+  <div class="card" style="padding:14px">
+    <form class="todo-form" onsubmit="addTodo(event)"><input id="todoInput" placeholder="Например: купить скобы, забрать футболку…" maxlength="240" autocomplete="off"><button class="btn btn-primary" type="submit">＋ Добавить</button></form>
+    <div id="todoList" class="todo-list"></div>
+  </div>
+</section>
+
 <section id="expenses" class="section">
   <div class="section-head">
     <div>
@@ -811,6 +832,7 @@ td input[type=text]:focus{background:var(--blue2)}
     </div>
   </div>
 </div>
+<div id="quickAddModal" class="balance-modal-backdrop hidden" onclick="if(event.target===this)closeQuickAdd()"><div class="balance-modal quick-modal"><h3>＋ Быстро добавить</h3><div class="quick-actions"><button class="btn" onclick="quickAdd('order')">📋 Заказ</button><button class="btn" onclick="quickAdd('dodelka')">🔧 Доделка</button><button class="btn" onclick="quickAdd('todo')">📝 Дело / To-do</button><button class="btn" onclick="quickAdd('expense')">💰 Расход</button></div><div class="balance-modal-actions"><button class="btn" onclick="closeQuickAdd()">Закрыть</button></div></div></div>
 <div id="globalSearchModal" class="balance-modal-backdrop hidden" onclick="if(event.target===this)closeGlobalSearch()">
   <div class="balance-modal global-search-modal">
     <h3>Поиск по всей базе</h3>
@@ -854,7 +876,8 @@ const sectionLoaders = {
   schedule: async () => { await loadScheduleSlice();   renderScheduleAll(); },
   dashboard:async () => { await loadAll(true);         renderDashboard(); },
   expenses: async () => { await loadExpensesSlice();   renderExpenseRows(); renderExpenseTotal(); renderExpenseHistory(); },
-  reminders:async () => { await loadRemindersSlice();  renderReminders(); renderHomeDate(); }
+  reminders:async () => { await loadRemindersSlice();  renderReminders(); renderHomeDate(); },
+  todo:async () => { await loadScheduleState(); renderTodo(); renderHomeTomorrow(); }
 };
 
 /* Точечные загрузки — вместо семи таблиц сразу, тянем только то, что нужно секции. */
@@ -904,7 +927,8 @@ async function loadExpensesSlice(){
       api('expense_drafts?id=eq.1&select=*')
     ]);
     expenseHistory=Array.isArray(ex)?ex:[];
-    if(!expenseDraftLoaded || !isEditing()){
+    await loadScheduleState();
+  if(!expenseDraftLoaded || !isEditing()){
       const draft=Array.isArray(ed)&&ed[0]?ed[0]:null;
       expenseRows=draft&&Array.isArray(draft.items)?draft.items.map(x=>({date:x.date||'',description:x.description||'',amount:x.amount??''})):[];
       const bal=draft?roundMoney(parseNum(draft.balance)):0;
@@ -1111,7 +1135,7 @@ function normaliseScheduleState(raw){
       cells[k]=parts.filter(Boolean).join('\n');
     }
   });
-  return {names:[...SCHEDULE_WORKERS],cells,notes:typeof s.notes==='string'?s.notes:''};
+  return {names:[...SCHEDULE_WORKERS],cells,notes:typeof s.notes==='string'?s.notes:'',todos:Array.isArray(s.todos)?s.todos:[]};
 }
 async function loadScheduleState(){
  try{
@@ -1124,8 +1148,8 @@ let scheduleSaveTimer=null;
 async function saveScheduleState(showError=true){
  clearTimeout(scheduleSaveTimer);
  const payload={id:1,state:scheduleState,updated_at:new Date().toISOString()};
- try{await api('schedule_state?on_conflict=id',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(payload)})}
- catch(e){if(showError)toast('Ошибка сохранения графика')}
+ try{await api('schedule_state?on_conflict=id',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(payload)});return true}
+ catch(e){if(showError)toast('Не удалось сохранить данные в базе: '+(e?.message||'ошибка'));return false}
 }
 function queueScheduleSave(){clearTimeout(scheduleSaveTimer);scheduleSaveTimer=setTimeout(()=>saveScheduleState(),180)}
 function setScheduleNotes(value){
@@ -1212,7 +1236,7 @@ function renderBrickSources(){
 function renderScheduleAll(){renderSchedule();renderBrickSources();renderScheduleNotes()}
 async function clearSchedule(){
   if(!confirmDelete('Будут очищены все записи в расписании. Заметки на полях останутся.'))return;
-  scheduleState={names:[...SCHEDULE_WORKERS],cells:{},notes:scheduleState.notes||''};
+  scheduleState={names:[...SCHEDULE_WORKERS],cells:{},notes:scheduleState.notes||'',todos:Array.isArray(scheduleState.todos)?scheduleState.todos:[]};
   await saveScheduleState();renderScheduleAll();toast('Расписание очищено');
 }
 
@@ -1240,6 +1264,7 @@ async function loadAll(silent=false){
   ]);
   ordersData=ps.map(p=>({id:p.id,period:p.title,rows:os.filter(o=>o.period_id===p.id).map(o=>({id:o.id,number:o.number,product:o.product,address:o.address,ldsp:o.ldsp,furniture:o.furniture,facades:o.facades,assembly_ready:o.assembly_ready,assembler:o.assembler,installer:o.installer,note:o.note,ready:o.ready,created_at:o.created_at,updated_at:o.updated_at})),archived:!!p.archived}));
   dodelkiRows=dr;orderedRows=op;expenseHistory=Array.isArray(ex)?ex:[];remindersRows=Array.isArray(rm)?rm:[];
+  await loadScheduleState();
   if(!expenseDraftLoaded || !isEditing()){
     const draft=Array.isArray(ed)&&ed[0]?ed[0]:null;
     expenseRows=draft&&Array.isArray(draft.items)?draft.items.map(x=>({date:x.date||'',description:x.description||'',amount:x.amount??''})):[];
@@ -1569,6 +1594,33 @@ function renderHomeDate(){
   const time=d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   const now=new Date(),up=remindersRows.map(r=>({...r,_days:reminderDays(r,now),_target:getReminderTarget(r,now)})).filter(r=>r._days>=0&&r._days<=5).sort((a,b)=>a._days-b._days)[0];
   el.innerHTML=`<div class="now">${week}, ${date} · ${time}</div><div class="next">${up?`${up.type==='birthday'?'🎂':'📌'} ${esc(up.description)} · ${reminderDaysText(up._days)}`:' '}</div>`;
+  renderHomeTomorrow();
+}
+
+/* === ДЕЛА / БЫСТРОЕ ДОБАВЛЕНИЕ / ЗАВТРА === */
+function todoItems(){if(!Array.isArray(scheduleState.todos))scheduleState.todos=[];return scheduleState.todos}
+function renderTodo(){const el=document.getElementById('todoList');if(!el)return;const rows=todoItems();el.innerHTML=rows.length?rows.map((t,i)=>`<div class="todo-item ${t.done?'done':''}"><input type="checkbox" ${t.done?'checked':''} onchange="toggleTodo(${i},this.checked)" aria-label="Выполнено"><div class="todo-text">${esc(t.text)}</div><button class="delete" onclick="deleteTodo(${i})" title="Удалить">×</button></div>`).join(''):'<div class="empty">Пока дел нет — добавь первую заметку выше.</div>'}
+async function addTodo(e){if(e)e.preventDefault();const input=document.getElementById('todoInput');const text=String(input?.value||'').trim();if(!text)return;const item={id:Date.now()+'-'+Math.random().toString(36).slice(2,7),text,done:false,created_at:new Date().toISOString()};todoItems().unshift(item);if(input)input.value='';renderTodo();const saved=await saveScheduleState(false);if(saved){renderHomeTomorrow();toast('Дело сохранено в базе данных')}else{todoItems().shift();if(input)input.value=text;renderTodo();toast('Не удалось сохранить дело в базе. Проверь соединение и попробуй ещё раз.')}}
+async function toggleTodo(i,done){const t=todoItems()[i];if(!t)return;const previous=!!t.done;t.done=!!done;const saved=await saveScheduleState(false);if(!saved){t.done=previous;toast('Не удалось сохранить изменение в базе данных')}renderTodo()}
+async function deleteTodo(i){if(!confirmDelete('Удалить эту заметку?'))return;const removed=todoItems().splice(i,1)[0];renderTodo();const saved=await saveScheduleState(false);if(saved){renderHomeTomorrow();toast('Дело удалено')}else{todoItems().splice(i,0,removed);renderTodo();toast('Не удалось удалить дело из базы данных')}}
+function openQuickAdd(){document.getElementById('quickAddModal')?.classList.remove('hidden')}
+function closeQuickAdd(){document.getElementById('quickAddModal')?.classList.add('hidden')}
+function quickAdd(kind){closeQuickAdd();if(kind==='order'){showSection('orders');setTimeout(()=>addPeriod(),100)}else if(kind==='dodelka'){showSection('dodelki');setTimeout(()=>addDodelka(),100)}else if(kind==='todo'){showSection('todo');setTimeout(()=>document.getElementById('todoInput')?.focus(),120)}else if(kind==='expense'){showSection('expenses');setTimeout(()=>addExpenseRow(),100)}}
+function renderHomeTomorrow(){const el=document.getElementById('homeTomorrowList');if(!el)return;
+  const now=gmt7Now(),tomorrow=new Date(now);tomorrow.setDate(tomorrow.getDate()+1);const day=tomorrow.getDay();
+  if(day===0||day===6){el.innerHTML='<div class="home-tomorrow-empty">На завтра нет колонки в текущем графике (суббота/воскресенье).</div>';return}
+  const col=day-1,items=[];
+  for(let wi=0;wi<SCHEDULE_WORKERS.length;wi++){
+    const raw=String(getCell(wi,col)||'').trim();if(!raw)continue;
+    const chunks=raw.split(/\n|[,;]+/).map(x=>x.trim()).filter(Boolean);
+    for(const chunk of chunks){
+      const matchOrder=ordersData.flatMap(p=>p.rows).find(r=>r.number&&new RegExp('(^|[^0-9A-Za-zА-Яа-я])'+String(r.number).trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'([^0-9A-Za-zА-Яа-я]|$)').test(chunk));
+      const matchFix=dodelkiRows.find(r=>r.order_number&&new RegExp('(^|[^0-9A-Za-zА-Яа-я])'+String(r.order_number).trim().replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'([^0-9A-Za-zА-Яа-я]|$)').test(chunk));
+      const item=matchOrder?{type:'Монтаж',number:matchOrder.number,address:matchOrder.address,worker:matchOrder.installer||matchOrder.assembler||SCHEDULE_WORKERS[wi]}:matchFix?{type:'Доделка',number:matchFix.order_number,address:matchFix.address,worker:matchFix.installer||SCHEDULE_WORKERS[wi]}:{type:'По графику',number:chunk,address:'',worker:SCHEDULE_WORKERS[wi]};
+      if(!items.some(x=>x.type===item.type&&x.number===item.number&&x.worker===item.worker))items.push(item);
+    }
+  }
+  el.innerHTML=items.length?items.map(x=>`<div class="home-tomorrow-item"><b>${esc(x.type)} · № ${esc(x.number)}</b><span>${esc(x.address||'Адрес не указан')}</span><span>Монтажник: ${esc(x.worker||'не указан')}</span></div>`).join(''):'<div class="home-tomorrow-empty">На завтра пока ничего не внесено в график.</div>';
 }
 
 /* === DASHBOARD === */
@@ -1797,7 +1849,7 @@ async function performGlobalSearch(){
 }
 
 /* === НАВИГАЦИЯ === */
-const sectionTitles={orders:'Заказы',dodelki:'Доделки',ordered:'Заказные позиции',schedule:'График',dashboard:'Эксп. Dash',expenses:'Расходы',reminders:'Напоминания'};
+const sectionTitles={orders:'Заказы',dodelki:'Доделки',ordered:'Заказные позиции',schedule:'График',dashboard:'Эксп. Dash',expenses:'Расходы',reminders:'Напоминания',todo:'Дела'};
 function showHome(push=true){
   setExportVisibility(true);
   stopSectionRefresh();
@@ -1820,6 +1872,7 @@ function showSection(id,push=true){
   if(id==='dashboard') setTimeout(renderDashboard,50);
   if(id==='expenses'){renderExpenseRows();renderExpenseTotal();renderExpenseHistory()}
   if(id==='reminders'){renderReminders();renderHomeDate()}
+  if(id==='todo'){renderTodo();setTimeout(()=>document.getElementById('todoInput')?.focus(),80)}
   if(push)history.pushState({},'', '#'+id);
   // Запускаем ленивое обновление только этой секции.
   startSectionRefresh(id);
