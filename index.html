@@ -598,9 +598,28 @@ td input[type=text]:focus{background:var(--blue2)}
 .schedule-actions{gap:8px;flex-wrap:wrap}
 @media(max-width:600px){.export-control{top:9px;left:76px}.export-round{width:30px;height:30px}.export-menu{top:37px;width:225px}}
 
+
+/* Компактная главная и мягкие микровзаимодействия */
+.menu-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.menu-card{min-height:112px;padding:16px;border-radius:17px}
+.menu-icon{font-size:23px;margin-bottom:13px}.menu-title{font-size:16px}
+.menu-secondary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));max-width:620px;gap:8px;margin-top:10px}
+.menu-card-md{display:flex;align-items:center;justify-content:center;gap:9px;padding:12px 15px;min-height:54px;border-radius:14px;color:var(--text);background:var(--menu-card-bg);backdrop-filter:blur(18px);border:1px solid var(--menu-card-border);box-shadow:var(--menu-card-shadow);font-size:14px;font-weight:700;text-decoration:none;transition:transform .2s,background .2s}
+.menu-card-md:hover{transform:translateY(-2px);background:var(--menu-card-bg-hover)}
+.menu-card-sm{padding:7px 8px;min-height:32px;gap:5px;border-radius:10px;font-size:10px}.menu-card-sm .sm-icon{font-size:12px}
+.history-metrics{font-size:11px;color:var(--muted);white-space:normal;margin-left:auto;text-align:right;line-height:1.35}
+.expense-history-head{gap:9px;flex-wrap:wrap}
+.menu-card,.menu-card-md,.menu-card-sm{animation:homeIn .42s both}
+.menu-card:nth-child(2){animation-delay:.04s}.menu-card:nth-child(3){animation-delay:.08s}
+@keyframes homeIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:600px){.menu-grid{gap:7px}.menu-card{min-height:88px;padding:11px;border-radius:13px}.menu-icon{font-size:20px;margin-bottom:9px}.menu-title{font-size:13px}.menu-secondary{gap:5px;margin-top:7px}.menu-card-md{min-height:43px;padding:8px 5px;font-size:12px}.menu-card-sm{font-size:9px;padding:6px 3px;min-height:29px;gap:3px}.menu-card-sm .sm-icon{font-size:10px}.history-metrics{flex-basis:100%;text-align:left;margin-left:28px}}
+
 </style>
 </head>
 <body>
+<div id="startupSplash" aria-hidden="true"><div class="startup-ring"></div></div>
+<style>#startupSplash{position:fixed;inset:0;z-index:99999;background:#080808;display:grid;place-items:center;opacity:1;transition:opacity .22s ease}.startup-ring{width:34px;height:34px;border:3px solid #292929;border-top-color:#f0b629;border-radius:50%;animation:spinSplash .72s linear infinite}@keyframes spinSplash{to{transform:rotate(360deg)}}#startupSplash.done{opacity:0;pointer-events:none}@media(prefers-reduced-motion:reduce){.startup-ring{animation-duration:1.2s}}</style>
+<script>window.addEventListener('load',()=>{setTimeout(()=>{const s=document.getElementById('startupSplash');if(s){s.classList.add('done');setTimeout(()=>s.remove(),260)}},850)});</script>
 <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Переключить тему" aria-label="Переключить тему">
   <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
   <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -629,15 +648,15 @@ td input[type=text]:focus{background:var(--blue2)}
     <button class="menu-card" onclick="showSection('orders')"><div class="menu-icon">📋</div><div class="menu-title">Заказы</div></button>
     <button class="menu-card" onclick="showSection('dodelki')"><div class="menu-icon">🔧</div><div class="menu-title">Доделки</div></button>
     <button class="menu-card" onclick="showSection('ordered')"><div class="menu-icon">📦</div><div class="menu-title">Заказные позиции</div></button>
-    <button class="menu-card" onclick="showSection('schedule')"><div class="menu-icon">🗓️</div><div class="menu-title">График</div></button>
+    
   </div>
   <div class="menu-secondary">
-    <button class="menu-card-sm" onclick="showSection('dashboard')"><span class="sm-icon">📊</span><span>Эксп. Dash</span></button>
-    <a class="menu-card-sm" href="https://disk.yandex.ru/client/disk/%D0%92%D0%A1%D0%95%20%D0%9A%D0%9B%D0%98%D0%95%D0%9D%D0%A2%D0%AB" target="_blank" rel="noopener noreferrer"><span class="sm-icon">🗂️</span><span>Диск</span></a>
-    <button class="menu-card-sm" onclick="showSection('expenses')"><span class="sm-icon">💰</span><span>Расходы</span></button>
+    <button class="menu-card-md" onclick="showSection('expenses')"><span class="sm-icon">💰</span><span>Расходы</span></button>
+    <a class="menu-card-md" href="https://disk.yandex.ru/client/disk/%D0%92%D0%A1%D0%95%20%D0%9A%D0%9B%D0%98%D0%95%D0%9D%D0%A2%D0%AB" target="_blank" rel="noopener noreferrer"><span class="sm-icon">🗂️</span><span>Диск</span></a>
+    <button class="menu-card-md" onclick="showSection('schedule')"><span class="sm-icon">🗓️</span><span>График</span></button>
     <button class="menu-card-sm" onclick="openGlobalSearch()"><span class="sm-icon">🔎</span><span>Поиск</span></button>
-    <button class="menu-card-sm" onclick="showSection('todo')"><span class="sm-icon">📝</span><span>Дела</span></button>
     <button class="menu-card-sm" onclick="openQuickAdd()"><span class="sm-icon">＋</span><span>Быстро добавить</span></button>
+    <button class="menu-card-sm" onclick="showSection('todo')"><span class="sm-icon">📝</span><span>Дела</span></button>
   </div>
 </div>
 <div class="home-tomorrow"><div class="home-tomorrow-head"><span>🗓️ Завтра · монтажи и доделки</span><button class="btn btn-sm" onclick="showSection('schedule')">Открыть график</button></div><div id="homeTomorrowList" class="home-tomorrow-list"><div class="home-tomorrow-empty">Загружаем расписание…</div></div></div>
